@@ -1,7 +1,7 @@
 # Servidor PTA
 
 Servidor do **Protocolo de Transferência de Arquivos (PTA)**, desenvolvido em
-Python no contexto de Computação em Nuvem. Utiliza sockets TCP,
+Python. Utiliza sockets TCP,
 implementa apresentação de usuários, listagem, download binário e encerramento
 de sessão. Atende vários clientes com `asyncio` e usa apenas a biblioteca padrão.
 
