@@ -385,6 +385,38 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
 
 
 class EntrypointTests(unittest.TestCase):
+    def test_default_cli_accepts_unmodified_teacher_client(self):
+        import re
+        name = "dummyfile02-with-a-bigger-name-to-test-your-buffer-treatment.txt"
+        code = ("import random, runpy, sys; "
+                f"random.choice=lambda files: {name!r}; "
+                f"runpy.run_path({str(ROOT / 'pta-client.py')!r}, run_name='__main__')")
+        with tempfile.TemporaryDirectory() as directory:
+            # Apenas a porta muda; endereço e enquadramento usam os padrões reais.
+            process = subprocess.Popen(
+                [sys.executable, str(BASE / "server.py"), "--port", "0"],
+                cwd=directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                line = process.stderr.readline()
+                match = re.search(r"\('0\.0\.0\.0', (\d+)\)", line)
+                self.assertIsNotNone(match, line)
+                result = subprocess.run(
+                    [sys.executable, "-c", code, "127.0.0.1", match[1], "user1"],
+                    cwd=directory, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                self.assertIn(b"Points: 6/6", result.stdout)
+                self.assertIn(b"TERM is OK!", result.stdout)
+                self.assertEqual((Path(directory) / name).read_bytes(),
+                                 (BASE / "files" / name).read_bytes())
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                try:
+                    process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.communicate(timeout=5)
+
     def test_start_from_other_directory_and_shutdown_active_session(self):
         import socket
         with tempfile.TemporaryDirectory() as directory:

@@ -25,6 +25,12 @@ cd pta
 python3 pta-server/server.py
 ```
 
+**Esta é a configuração recomendada para a atividade e para o cliente fornecido
+pelo professor.** O comando já ativa `--framing auto`: aceita os pedidos sem
+terminador do cliente original e detecta LF/CRLF quando utilizados. Nenhum
+terminador adicional é exigido nas mensagens originais, e as respostas mantêm
+o formato do PTA. Não é necessário passar opções extras para a avaliação.
+
 Por padrão, o servidor escuta em `0.0.0.0:11550`, aceita conexões de rede e lê
 os usuários de `pta-server/users.txt`. Os arquivos disponíveis ficam em
 `pta-server/files/`. Esses caminhos são resolvidos a partir do script: é
@@ -187,6 +193,11 @@ modificá-lo, fixa externamente a seleção de um arquivo textual de 2048 bytes 
 verifica a pontuação 6/6, TERM e o conteúdo baixado. Downloads binários e vazios
 são verificados separadamente. O comportamento do servidor não depende de
 corrigir ou substituir o cliente fornecido.
+
+Há também um teste completo da execução pela linha de comando: o servidor é
+iniciado sem selecionar `--framing`, e o cliente original se conecta a ele sem
+terminadores, obtém 6/6 e baixa o arquivo textual corretamente. Esse teste usa
+uma porta temporária para não conflitar com um servidor já em execução.
 
 ## Entrega da atividade
 
