@@ -1,4 +1,4 @@
-name: PTA tests
+name: Testes do PTA
 on: [push, pull_request]
 permissions:
   contents: read

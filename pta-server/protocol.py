@@ -1,4 +1,4 @@
-"""PTA request grammar. Payloads are never decoded as text."""
+"""Gramática dos pedidos PTA. O conteúdo dos arquivos permanece binário."""
 
 from dataclasses import dataclass
 import re
@@ -7,7 +7,7 @@ MAX_REQUEST = 64 * 1024
 
 
 def sequence_hint(data: bytes) -> bytes:
-    """Recover an ASCII sequence even when the remainder is malformed."""
+    """Recupera a sequência ASCII mesmo se o restante estiver malformado."""
     token = data.split(b" ", 1)[0].split(b"\t", 1)[0]
     return token if re.fullmatch(rb"[0-9]+", token) else b"0"
 
@@ -30,7 +30,7 @@ def parse_request(data: bytes) -> Request:
         text = data.decode("ascii")
     except UnicodeDecodeError:
         raise InvalidRequest(sequence) from None
-    # A single ASCII space separates fields. No leading/trailing whitespace.
+    # Um espaço ASCII separa os campos, sem espaços nas extremidades.
     fields = text.split(" ")
     if (len(fields) < 2 or not re.fullmatch(r"[0-9]+", fields[0])
             or any(not field or any(ord(c) < 33 or ord(c) > 126 for c in field)
@@ -42,6 +42,6 @@ def parse_request(data: bytes) -> Request:
     if command == "CUMP" and len(fields) == 3:
         return Request(sequence, command, fields[2])
     if command == "PEGA" and len(fields) >= 3:
-        # The specification explicitly says to ignore additional file requests.
+        # A especificação determina que pedidos de arquivos extras sejam ignorados.
         return Request(sequence, command, fields[2])
     raise InvalidRequest(sequence)

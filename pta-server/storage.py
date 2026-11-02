@@ -1,4 +1,4 @@
-"""Read-only access to the configured PTA users and flat file directory."""
+"""Acesso de leitura aos usuários e ao diretório de arquivos do PTA."""
 
 import os
 from pathlib import Path
@@ -10,7 +10,7 @@ def load_users(path: Path) -> frozenset[str]:
     users = path.read_text(encoding="ascii").splitlines()
     if not users or any(not user or any(ord(c) < 33 or ord(c) > 126 for c in user)
                         for user in users):
-        raise ValueError("users.txt must contain one nonempty ASCII username per line")
+        raise ValueError("users.txt deve conter um usuário ASCII não vazio por linha")
     return frozenset(users)
 
 
@@ -35,13 +35,13 @@ class FileStore:
     def open_file(self, name: str) -> tuple[BinaryIO, int]:
         if not valid_filename(name):
             raise FileNotFoundError(name)
-        # O_NOFOLLOW prevents symlink substitution between validation and open.
-        # O_NONBLOCK also prevents a substituted FIFO from blocking the loop.
+        # O_NOFOLLOW impede substituição por link simbólico durante a abertura.
+        # O_NONBLOCK evita que um FIFO substituído bloqueie o laço de eventos.
         flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
         if hasattr(os, "O_NOFOLLOW"):
             fd = os.open(self.directory / name, flags | os.O_NOFOLLOW)
         else:
-            # Portable fallback; Unix is the primary supported platform.
+            # Alternativa portátil; Unix é a plataforma principal de execução.
             path = self.directory / name
             if path.is_symlink():
                 raise FileNotFoundError(name)

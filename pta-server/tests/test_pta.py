@@ -1,4 +1,4 @@
-"""Protocol and socket-level regression suite; no external dependencies."""
+"""Testes de protocolo e integração TCP, sem dependências externas."""
 
 import asyncio
 import hashlib
@@ -53,12 +53,13 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
         self.users = load_users(BASE / "users.txt")
         self.sessions = set()
         self.connections = []
+        self.framing = "auto"
 
         async def connected(reader, writer):
             task = asyncio.current_task()
             self.sessions.add(task)
             try:
-                await Session(reader, writer, self.users, self.store, 0.1).run()
+                await Session(reader, writer, self.users, self.store, 0.1, self.framing).run()
             finally:
                 self.sessions.discard(task)
 
@@ -206,8 +207,40 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
             await writer.drain()
             await asyncio.sleep(0.015)
         self.assertEqual(await self.exact(reader, 10), b"41 ARQS 0 ")
-        await self.expect(reader, writer, b"42 LIST", b"42 ARQS 0 ")
-        await self.expect(reader, writer, b"43 TERM", b"43 OK")
+        await self.expect(reader, writer, b"42 LIST\n", b"42 ARQS 0 ")
+        await self.expect(reader, writer, b"43 TERM\n", b"43 OK")
+
+    async def test_legacy_client_without_any_terminator(self):
+        reader, writer = await self.connect(False)
+        await self.expect(reader, writer, b"30 CUMP user1", b"30 OK")
+        await self.expect(reader, writer, b"31 LIST", b"31 ARQS 0 ")
+        await self.expect(reader, writer, b"32 TERM", b"32 OK")
+
+    async def test_line_mode_preserves_slow_fragments_after_detection(self):
+        reader, writer = await self.connect()
+        writer.write(b"1 LI")
+        await writer.drain()
+        await asyncio.sleep(0.15)
+        await self.expect(reader, writer, b"ST\r", b"")
+        await asyncio.sleep(0.15)
+        await self.expect(reader, writer, b"\n", b"1 ARQS 0 ")
+        await self.expect(reader, writer, b"2 TERM\n", b"2 OK")
+
+    async def test_explicit_lines_mode_handles_slow_initial_greeting(self):
+        self.framing = "lines"
+        reader, writer = await self.connect(False)
+        writer.write(b"1 CUMP us")
+        await writer.drain()
+        await asyncio.sleep(0.15)
+        await self.expect(reader, writer, b"er1\n", b"1 OK")
+        await self.expect(reader, writer, b"2 TERM\n", b"2 OK")
+
+    async def test_explicit_legacy_mode_allows_mixed_terminators(self):
+        self.framing = "legacy"
+        reader, writer = await self.connect()
+        await self.expect(reader, writer, b"1 LIST", b"1 ARQS 0 ")
+        await self.expect(reader, writer, b"2 LIST\r\n", b"2 ARQS 0 ")
+        await self.expect(reader, writer, b"3 TERM", b"3 OK")
 
     async def test_oversized_request_closes(self):
         for authenticated in (False, True):
@@ -220,6 +253,33 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
         frame = b"8 " + b"X" * (MAX_REQUEST - 2)
         await self.expect(reader, writer, frame + b"\n", b"8 NOK")
         await self.expect(reader, writer, b"9 TERM\n", b"9 OK")
+
+    async def test_crlf_limit_excludes_both_terminator_bytes(self):
+        frame = b"8 " + b"X" * (MAX_REQUEST - 2)
+        for split_crlf in (False, True):
+            with self.subTest(split_crlf=split_crlf):
+                reader, writer = await self.connect()
+                if split_crlf:
+                    writer.write(frame + b"\r")
+                    await writer.drain()
+                    await asyncio.sleep(0.15)
+                    await self.expect(reader, writer, b"\n", b"8 NOK")
+                else:
+                    await self.expect(reader, writer, frame + b"\r\n", b"8 NOK")
+                await self.expect(reader, writer, b"9 LIST\n", b"9 ARQS 0 ")
+
+    async def test_payload_above_limit_with_crlf_closes(self):
+        reader, writer = await self.connect()
+        frame = b"8 " + b"X" * (MAX_REQUEST - 1)
+        await self.expect(reader, writer, frame + b"\r\n", b"8 NOK")
+        self.assertEqual(await asyncio.wait_for(reader.read(1), 2), b"")
+
+    async def test_bare_cr_is_payload_in_legacy_mode(self):
+        reader, writer = await self.connect(False)
+        await self.expect(reader, writer, b"1 CUMP user1", b"1 OK")
+        frame = b"8 " + b"X" * (MAX_REQUEST - 2) + b"\r"
+        await self.expect(reader, writer, frame, b"8 NOK")
+        self.assertEqual(await asyncio.wait_for(reader.read(1), 2), b"")
 
     async def test_storage_errors_keep_session_alive(self):
         reader, writer = await self.connect()
@@ -251,7 +311,7 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
         await writer.drain()
         header = b"9 ARQ 16777216 "
         self.assertEqual(await self.exact(reader, len(header)), header)
-        # Additional commands while backpressure keeps the transfer active.
+        # O controle de fluxo mantém a operação ocupada enquanto não lemos.
         writer.write(b"12 LIST\n13 TERM\n")
         await writer.drain()
         await asyncio.sleep(0.03)
@@ -259,6 +319,24 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hashlib.sha256(body).digest(),
                          hashlib.sha256(bytes(range(256)) * 65536).digest())
         await self.expect(reader, writer, b"14 LIST\n", b"14 ARQS 1 large")
+
+    async def test_busy_fragment_is_discarded_through_its_delimiter(self):
+        data = bytes(range(256)) * 65536
+        (self.directory / "large").write_bytes(data)
+        for pipelined in (False, True):
+            with self.subTest(pipelined=pipelined):
+                reader, writer = await self.connect()
+                writer.write(b"9 PEGA large\n" + (b"10 TE" if pipelined else b""))
+                await writer.drain()
+                header = b"9 ARQ 16777216 "
+                self.assertEqual(await self.exact(reader, len(header)), header)
+                if not pipelined:
+                    writer.write(b"10 TE")
+                    await writer.drain()
+                await asyncio.sleep(0.03)
+                self.assertEqual(await self.exact(reader, len(data)), data)
+                await self.expect(reader, writer, b"RM\n11 LIST\n", b"11 ARQS 1 large")
+                await self.expect(reader, writer, b"12 TERM\n", b"12 OK")
 
     async def test_twenty_concurrent_clients(self):
         payload = bytes(range(256)) * 300
@@ -285,7 +363,7 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
     async def test_original_client_text_download(self):
         self.store.directory = BASE / "files"
         name = "dummyfile02-with-a-bigger-name-to-test-your-buffer-treatment.txt"
-        # Pin the random choice externally; the supplied client stays untouched.
+        # Fixa a escolha aleatória externamente, sem alterar o cliente original.
         code = ("import random, runpy, sys; "
                 f"random.choice=lambda files: {name!r}; "
                 f"sys.argv=[{str(ROOT / 'pta-client.py')!r},'127.0.0.1',{str(self.port)!r},'user1']; "
@@ -314,7 +392,7 @@ class EntrypointTests(unittest.TestCase):
                 [sys.executable, str(BASE / "server.py"), "--host", "127.0.0.1", "--port", "0"],
                 cwd=directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             try:
-                # The first log record reports the actual OS-selected port.
+                # O primeiro log informa a porta escolhida pelo sistema.
                 line = process.stderr.readline()
                 import re
                 match = re.search(r"\('127\.0\.0\.1', (\d+)\)", line)
@@ -332,7 +410,8 @@ class EntrypointTests(unittest.TestCase):
 
     def test_invalid_cli_arguments(self):
         for args in (("--port", "65536"), ("--legacy-idle-ms", "0"),
-                     ("--legacy-idle-ms", "nan"), ("--legacy-idle-ms", "inf")):
+                     ("--legacy-idle-ms", "nan"), ("--legacy-idle-ms", "inf"),
+                     ("--framing", "invalid")):
             result = subprocess.run([sys.executable, str(BASE / "server.py"), *args],
                                     capture_output=True, timeout=5)
             self.assertEqual(result.returncode, 2)

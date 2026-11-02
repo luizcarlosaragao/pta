@@ -1,184 +1,23 @@
-# Practical Exam
-Please **fork** this repo and **develop your server** based on the protocol described in [pta.pdf][ptad] file (in portuguese). Before coding, I suggest you carefully read the document spec and understand the protocol. Experiment the protocol, using paper and pencil, drawing examples of protocol usage.
+# Servidor PTA
 
-Please develop your server code in the directory [pta-server][ptas]. The user list that must be accepted by the protocol must be read from the [pta-server/users.txt][ptau] file. The files to be served by your server are in the [pta-server/files][ptaa] directory. Please don't change these files and directories.
+Servidor do **Protocolo de Transferência de Arquivos (PTA)**, desenvolvido em
+Python para a atividade de Sistemas Distribuídos. Utiliza sockets TCP,
+implementa apresentação de usuários, listagem, download binário e encerramento
+de sessão. Atende vários clientes com `asyncio` e usa apenas a biblioteca padrão.
 
-Your server code will be evaluated through an automatic testing tool. This way, in order to test your code you can use the [pta-client.py][ptac] file. This file makes some tests but it is not an extensive test. So, keep in mind that the actual evaluation will test other aspects of your protocol implementation.
+Este repositório é um fork de [glaucogoncalves/pta](https://github.com/glaucogoncalves/pta).
+A [especificação do protocolo](pta.pdf) define as mensagens e os estados.
+O [enunciado da atividade em português](docs/atividade.md) fica separado desta
+documentação de uso.
 
-You could use **any programming language**. But you must provide instructions in order to successfully run your code. Describe all stuff about libraries, interpreters, versions and so on. After finishing development, you must share the link of your github repo in the evaluation environment ([sigaa.ufpa.br](http://sigaa.ufpa.br/)).
+## Requisitos
 
-[ptas]: <https://github.com/glaucogoncalves/pta/tree/master/pta-server>
-[ptau]: <https://github.com/glaucogoncalves/pta/tree/master/pta-server/users.txt>
-[ptaa]: <https://github.com/glaucogoncalves/pta/tree/master/pta-server/files>
-[ptac]: <https://github.com/glaucogoncalves/pta/tree/master/pta-client.py>
-[ptad]: <https://github.com/glaucogoncalves/pta/tree/master/pta.pdf>
+- **Python 3.11 ou superior**.
+- **Linux** como plataforma principal de execução e testes.
+- Porta **TCP 11550** disponível para a configuração padrão.
+- Nenhuma instalação por `pip`, frontend, API HTTP ou banco de dados.
 
----
-
-# Servidor PTA implementado
-
-Servidor de transferência de arquivos sobre **TCP**, conforme `pta.pdf`.
-Implementado em Python com `asyncio`, sem dependências externas, frontend,
-HTTP ou banco de dados. A especificação e as instruções originais acima foram
-preservadas, assim como `pta-client.py`, `pta.pdf`, `pta-server/users.txt` e
-todos os arquivos em `pta-server/files/`.
-
-## Requisitos e execução
-
-- Python **3.11 ou superior**; biblioteca padrão apenas, sem `pip install`.
-- Linux é a plataforma principal de execução e validação.
-- Porta TCP **11550** disponível. O servidor escuta em **0.0.0.0** por padrão.
-
-Na raiz do repositório:
-
-```bash
-python3 pta-server/server.py
-```
-
-Para limitar o acesso ao computador local ou escolher outra porta:
-
-```bash
-python3 pta-server/server.py --host 127.0.0.1 --port 11550
-python3 pta-server/server.py --help
-```
-
-Também é possível iniciar de qualquer diretório usando o caminho absoluto do
-script. Os caminhos dos usuários e arquivos são relativos ao próprio código,
-não ao diretório do terminal. A apresentação exige um usuário de `users.txt`
-(`user1`, `user2` ou `user3` nos materiais originais), com comparação sensível a
-maiúsculas e minúsculas. A lista é carregada na inicialização; alterações exigem
-reinício. Problemas de configuração ou porta ocupada encerram o processo com
-erro e diagnóstico em `stderr`. Logs nunca são enviados pelo protocolo.
-
-Ctrl+C (SIGINT) e SIGTERM encerram o listener e as conexões ativas.
-
-## Mensagens e estados
-
-Cada resposta repete exatamente o campo de sequência recebido. O servidor não
-exige início em zero nem rejeita saltos/repetições: a especificação atribui o
-incremento ao cliente. A sequência aceita contém somente dígitos ASCII, sem
-conversão para um inteiro de tamanho fixo.
-
-| Pedido | Resposta | Estado da conexão |
-| --- | --- | --- |
-| `73 CUMP user1` | `73 OK` | Pronto |
-| `73 CUMP desconhecido` | `73 NOK` | Fecha |
-| Qualquer outro pedido antes de CUMP válido | `SEQ NOK` | Fecha |
-| `74 LIST` | `74 ARQS N nome1,nome2,...` | Mantém |
-| `75 PEGA nome1` | `75 ARQ B ` seguido de exatamente B bytes | Mantém |
-| Arquivo ausente, inacessível ou caminho proibido | `SEQ NOK` | Mantém |
-| Comando inválido ou novo CUMP no estado pronto | `SEQ NOK` | Mantém |
-| `76 TERM` no estado pronto | `76 OK` | Fecha |
-
-Os campos são separados por um único espaço ASCII. Comandos distinguem
-maiúsculas/minúsculas; LIST e TERM não recebem argumentos. CUMP recebe um
-argumento. PEGA atende somente o primeiro arquivo e ignora argumentos de
-arquivos adicionais, conforme a regra específica do PDF.
-
-LIST retorna nomes ordenados, separados por vírgulas, sem vírgula final. Um
-diretório vazio produz `SEQ ARQS 0 `, incluindo o espaço final. A listagem
-considera arquivos regulares diretamente no diretório; subdiretórios, links e
-nomes não representáveis no protocolo (não ASCII, espaços ou vírgulas) não são
-listados nem servidos. Caminhos absolutos, separadores de diretórios e `..`
-como componente de navegação são recusados. No Linux, a abertura usa
-`O_NOFOLLOW` para impedir substituição por link simbólico e `O_NONBLOCK` para
-não bloquear caso o nome seja substituído por um FIFO.
-
-O arquivo é aberto em modo binário e seu tamanho é obtido pelo descritor aberto.
-A transferência usa blocos de até 64 KiB e controle de fluxo do socket. Nenhum
-byte do arquivo é decodificado, transformado ou acrescido; arquivos vazios
-retornam `SEQ ARQ 0 `. Se uma leitura falhar após o cabeçalho, a conexão fecha
-sem inserir NOK no corpo. Os arquivos servidos devem permanecer estáveis
-durante uma transferência; não há snapshot contra edição externa simultânea.
-
-## Delimitação TCP e ambiguidades da especificação
-
-TCP entrega um fluxo de bytes, sem preservar os limites dos envios do cliente.
-O PDF não define terminador nem comprimento das requisições, e o cliente de
-exemplo não acrescenta quebra de linha. Por isso, não é possível garantir a
-identificação do fim de uma mensagem sem uma convenção adicional.
-
-Esta implementação mantém um buffer por conexão e aceita:
-
-1. **LF ou CRLF** no fim de cada requisição, permitindo delimitação explícita.
-2. **Ausência de terminador**, como no cliente original: após receber bytes,
-   aguarda **100 ms sem novos dados** para interpretar a requisição acumulada.
-
-O intervalo pode ser ajustado:
-
-```bash
-python3 pta-server/server.py --legacy-idle-ms 250
-```
-
-Fragmentos separados por pausas maiores que o intervalo podem ser interpretados
-como mensagens distintas. Comandos concatenados sem delimitador não são
-suportados. Clientes devem aguardar a resposta completa antes de enviar o
-próximo pedido. Mensagens recebidas enquanto LIST ou PEGA está em andamento,
-incluindo pedidos já concatenados atrás da operação no buffer de entrada, são
-descartadas; não há fila de operações por conexão. O término da operação é o
-término do envio pelo servidor, não uma confirmação de consumo pelo cliente.
-Respostas não recebem LF/CRLF ou qualquer outro terminador extra.
-
-Requisições são limitadas a **64 KiB**. Ao ultrapassar o limite, o servidor
-responde NOK quando possível e fecha a conexão. Se uma mensagem malformada
-não contém sequência numérica recuperável, responde `0 NOK`; essa convenção
-não é definida pelo PDF. Erros normais de formato preservam uma sessão já
-autenticada; antes da autenticação, encerram a conexão.
-
-O texto do PDF determina fechamento após apresentação inválida; essa regra
-prevalece sobre a seta simplificada de retorno ao estado inicial do diagrama.
-
-## Testes automatizados
-
-Na raiz do repositório:
-
-```bash
-python3 -m unittest discover -s pta-server/tests -v
-```
-
-Os testes iniciam servidores em `127.0.0.1` com portas temporárias escolhidas
-pelo sistema operacional. Não é necessário iniciar o servidor manualmente.
-O ambiente deve permitir sockets TCP locais. Dados auxiliares e downloads são
-gravados em diretórios temporários, sem modificar os materiais do professor.
-
-A suíte verifica apresentação, estados, sequências, mensagens inválidas,
-fragmentação, LF/CRLF e modo sem terminador, limites de buffer, listagens
-maiores que 2048 bytes, arquivos ausentes, bloqueio de caminhos/links,
-falhas de armazenamento, truncamento durante envio, desconexão, encerramento
-por sinal, leitura lenta, comandos durante transferência e **20 clientes
-simultâneos**. Todos os **16 arquivos originais**, incluindo PNG e arquivos
-vazios, são baixados e comparados por tamanho, conteúdo e SHA-256.
-
-O workflow `.github/workflows/tests.yml` executa a suíte no Ubuntu com
-**Python 3.11 e 3.14**, em pushes e pull requests.
-
-### Cliente original do professor
-
-Com o servidor em execução, pode-se executar o cliente original pelo caminho
-absoluto, a partir de um diretório temporário, para evitar downloads na raiz:
-
-```bash
-PTA_REPO="$(pwd)"
-PTA_DOWNLOADS="$(mktemp -d)"
-cd "$PTA_DOWNLOADS"
-python3 "$PTA_REPO/pta-client.py" 127.0.0.1 11550 user1
-```
-
-Esse cliente faz uma seleção aleatória de arquivo e tem limitações: decodifica
-dados como texto UTF-8, grava downloads em modo texto e sua contagem de arquivos
-depende da divisão dos dados entre leituras TCP. Portanto, pode falhar ao
-escolher o PNG ou produzir resultados inconsistentes quando a listagem é
-fragmentada. Ele não é um verificador suficiente da integridade do servidor.
-
-A suíte executa o cliente original sem modificá-lo, fixando externamente a
-escolha de um arquivo textual de 2048 bytes e verificando **6/6**, TERM e o
-conteúdo baixado. Os downloads binários e vazios são verificados pelo cliente
-de testes próprio, que lê bytes e respeita o tamanho anunciado pelo servidor.
-
-## Entrega
-
-Repositório de entrega: **https://github.com/luizcarlosaragao/pta**, fork público
-do repositório original, mantendo seu histórico. Para obter e iniciar:
+## Como executar
 
 ```bash
 git clone https://github.com/luizcarlosaragao/pta.git
@@ -186,6 +25,174 @@ cd pta
 python3 pta-server/server.py
 ```
 
-O link a entregar no SIGAA é a página do fork acima.
-A aprovação nos testes locais não garante aprovação em testes ocultos,
-especialmente nas ambiguidades do protocolo documentadas acima.
+Por padrão, o servidor escuta em `0.0.0.0:11550`, aceita conexões de rede e lê
+os usuários de `pta-server/users.txt`. Os arquivos disponíveis ficam em
+`pta-server/files/`. Esses caminhos são resolvidos a partir do script: é
+possível iniciá-lo de outro diretório usando seu caminho absoluto.
+
+Para escutar somente no computador local:
+
+```bash
+python3 pta-server/server.py --host 127.0.0.1 --port 11550
+```
+
+Para consultar as opções:
+
+```bash
+python3 pta-server/server.py --help
+```
+
+Os usuários originais são `user1`, `user2` e `user3`. A comparação diferencia
+maiúsculas e minúsculas. A lista é carregada na inicialização; sua atualização
+exige reinício. Falha de configuração ou porta ocupada encerra o processo com
+diagnóstico em `stderr`. Ctrl+C (SIGINT) e SIGTERM encerram o servidor e as
+conexões ativas. Os logs ficam em `stderr`, separados das mensagens TCP.
+
+## Comandos e respostas
+
+Os campos são separados por um espaço ASCII. Cada resposta repete exatamente
+o número de sequência do pedido. O cliente é responsável por incrementar essa
+sequência; o servidor aceita início diferente de zero e não exige contiguidade.
+
+| Pedido | Resposta | Resultado |
+| --- | --- | --- |
+| `73 CUMP user1` | `73 OK` | Autentica a sessão |
+| `73 CUMP desconhecido` | `73 NOK` | Fecha a conexão |
+| Outro comando antes de apresentação válida | `SEQ NOK` | Fecha a conexão |
+| `74 LIST` | `74 ARQS N nome1,nome2,...` | Lista os arquivos |
+| `75 PEGA nome1` | `75 ARQ B ` seguido de B bytes | Envia o arquivo |
+| Arquivo inexistente, inacessível ou caminho proibido | `SEQ NOK` | Mantém a sessão |
+| Pedido inválido ou novo CUMP após autenticação | `SEQ NOK` | Mantém a sessão |
+| `76 TERM` após autenticação | `76 OK` | Fecha a conexão |
+
+LIST e TERM não recebem argumentos; CUMP recebe o usuário. PEGA atende um
+arquivo por vez e ignora argumentos de arquivos adicionais, como determina
+a especificação. Pedidos malformados são rejeitados. Se não for possível
+recuperar uma sequência numérica ASCII, utiliza-se `0 NOK`; esse caso não é
+definido pelo PDF.
+
+LIST retorna nomes ordenados, separados por vírgulas, sem vírgula final.
+Sem arquivos, retorna `SEQ ARQS 0 `, com o espaço final. Downloads são
+binários, incluindo PNG e arquivos vazios: o cabeçalho informa o tamanho em
+bytes, e o corpo contém exatamente os bytes do arquivo, sem conversão.
+Um arquivo vazio produz `SEQ ARQ 0 `.
+
+**Os identificadores do protocolo não são traduzidos ou alterados.** Eles
+permanecem `CUMP`, `LIST`, `PEGA`, `TERM`, `OK`, `NOK`, `ARQS` e `ARQ`, com a
+capitalização exata da especificação. O enunciado não exige inglês para a
+documentação, comentários ou mensagens locais; esses textos estão em português.
+
+## Delimitação das requisições TCP
+
+TCP transmite um fluxo de bytes e não preserva os limites dos envios. O PDF não
+especifica terminador ou tamanho para as requisições, e o cliente original
+envia comandos sem terminador. O servidor oferece três modos:
+
+| Opção `--framing` | Funcionamento |
+| --- | --- |
+| `auto` (padrão) | Compatível com o cliente original; ao receber o primeiro LF, fixa o modo por linhas para aquela conexão |
+| `lines` | Exige LF ou CRLF desde o primeiro pedido, sem timeout de delimitação |
+| `legacy` | Delimita pedidos sem terminador por silêncio; aceita também LF/CRLF sem fixar o modo por linhas |
+
+No modo por linhas, fragmentos podem chegar em leituras distintas com pausas
+maiores que 100 ms, incluindo CR e LF separados. Uma requisição sem terminador
+permanece incompleta; o encerramento da entrada descarta sua parte pendente.
+Depois da detecção de LF em `auto`, o cliente deve continuar usando LF/CRLF.
+
+Para clientes que usam terminadores desde a primeira mensagem, inclusive
+quando a apresentação pode chegar lentamente:
+
+```bash
+python3 pta-server/server.py --framing lines
+```
+
+No formato legado, o padrão é **100 ms sem novos bytes** para considerar o
+pedido completo. É possível ajustar o intervalo:
+
+```bash
+python3 pta-server/server.py --framing legacy --legacy-idle-ms 250
+```
+
+Antes de detectar o primeiro LF no modo `auto`, aplica-se a mesma heurística
+do formato legado. Uma pausa maior que o intervalo pode dividir uma mensagem,
+especialmente na apresentação inicial. **Não há como eliminar universalmente
+essa ambiguidade sem definir limites de mensagem no cliente.** Aumentar o
+intervalo apenas altera o limite. Comandos concatenados sem terminadores não
+são suportados; aguarde a resposta completa antes de enviar o próximo pedido.
+
+Respostas não recebem terminadores adicionais. LIST/PEGA são operações
+atômicas por sessão: pedidos recebidos durante uma operação são ignorados.
+No modo por linhas, uma mensagem descartada continua sendo descartada até seu
+terminador, mesmo se a transferência terminar entre os fragmentos. Não há
+fila de operações por conexão. A conclusão do envio pelo servidor não exige
+confirmação adicional de leitura pelo cliente.
+
+O conteúdo de uma requisição é limitado a **64 KiB**, excluindo LF/CRLF.
+O excesso recebe NOK quando possível e fecha a conexão. O tamanho é verificado
+mesmo quando CR e LF chegam separadamente.
+
+## Armazenamento e integridade
+
+- Os materiais originais `pta.pdf`, `pta-client.py`, `pta-server/users.txt` e
+  todos os arquivos de `pta-server/files/` permanecem intactos.
+- Somente arquivos regulares diretamente na pasta são listados e servidos.
+  Links simbólicos, subdiretórios, caminhos absolutos e travessia de diretórios
+  são recusados.
+- Nomes incompatíveis com os campos do protocolo, como nomes não ASCII,
+  espaços ou vírgulas, não são listados nem servidos.
+- No Linux, a abertura usa `O_NOFOLLOW` contra links simbólicos e `O_NONBLOCK`
+  para evitar bloqueio em um FIFO substituído.
+- O tamanho é obtido pelo descritor aberto. O envio usa blocos de até 64 KiB
+  com controle de fluxo e sem carregar o arquivo inteiro em memória.
+- Se a leitura falhar após o cabeçalho ARQ, a conexão é encerrada sem inserir
+  NOK dentro do corpo. Os arquivos devem permanecer estáveis durante o envio;
+  não há snapshot contra edição externa simultânea.
+
+## Testes
+
+Na raiz do projeto, sem precisar iniciar o servidor manualmente:
+
+```bash
+python3 -m unittest discover -s pta-server/tests -v
+```
+
+Os testes usam portas temporárias locais e diretórios temporários. O ambiente
+precisa permitir sockets TCP. São verificados autenticação, estados,
+sequências, comandos inválidos, listagens grandes, downloads dos 16 arquivos
+originais por conteúdo e SHA-256, leitura lenta, desconexões, proteção de
+caminhos, falhas de leitura, concorrência e encerramento por sinal.
+
+As regressões cobrem fragmentos atravessando o fim de uma transferência,
+limites de 64 KiB com LF/CRLF e CRLF separado, fragmentação lenta no modo por
+linhas, apresentação lenta no modo explícito e compatibilidade legada.
+O GitHub Actions executa a suíte no Ubuntu com Python **3.11 e 3.14**.
+
+### Cliente fornecido pelo professor
+
+Com o servidor iniciado, execute o cliente original em outra janela:
+
+```bash
+python3 pta-client.py 127.0.0.1 11550 user1
+```
+
+Esse cliente grava o download no diretório atual; se quiser evitar arquivos
+extras na pasta do projeto, execute-o por caminho absoluto a partir de uma
+pasta temporária. Ele escolhe um arquivo aleatório e trata o conteúdo como
+texto UTF-8, portanto pode falhar ao selecionar o PNG. A contagem da listagem
+também depende da fragmentação das leituras TCP.
+
+Por isso, a suíte também usa um cliente próprio que lê bytes e respeita o
+tamanho anunciado. O teste de compatibilidade executa o cliente original sem
+modificá-lo, fixa externamente a seleção de um arquivo textual de 2048 bytes e
+verifica a pontuação 6/6, TERM e o conteúdo baixado. Downloads binários e vazios
+são verificados separadamente. O comportamento do servidor não depende de
+corrigir ou substituir o cliente fornecido.
+
+## Entrega da atividade
+
+O repositório de entrega é o fork público
+[luizcarlosaragao/pta](https://github.com/luizcarlosaragao/pta).
+O professor pode cloná-lo e iniciar o servidor com os comandos desta página.
+A submissão do link é feita no SIGAA. Os testes locais e o CI fornecem evidência
+de correção, mas não garantem aprovação em testes ocultos ou em interpretações
+diferentes das ambiguidades descritas na especificação.
