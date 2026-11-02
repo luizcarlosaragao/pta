@@ -1,14 +1,12 @@
 # Servidor PTA
 
 Servidor do **Protocolo de Transferência de Arquivos (PTA)**, desenvolvido em
-Python para a atividade de Sistemas Distribuídos. Utiliza sockets TCP,
+Python no contexto de Computação em Nuvem. Utiliza sockets TCP,
 implementa apresentação de usuários, listagem, download binário e encerramento
 de sessão. Atende vários clientes com `asyncio` e usa apenas a biblioteca padrão.
 
 Este repositório é um fork de [glaucogoncalves/pta](https://github.com/glaucogoncalves/pta).
 A [especificação do protocolo](pta.pdf) define as mensagens e os estados.
-O [enunciado da atividade em português](docs/atividade.md) fica separado desta
-documentação de uso.
 
 ## Requisitos
 
@@ -25,11 +23,11 @@ cd pta
 python3 pta-server/server.py
 ```
 
-**Esta é a configuração recomendada para a atividade e para o cliente fornecido
-pelo professor.** O comando já ativa `--framing auto`: aceita os pedidos sem
+**Esta é a configuração padrão para uso com o cliente incluído no projeto.**
+O comando já ativa `--framing auto`: aceita os pedidos sem
 terminador do cliente original e detecta LF/CRLF quando utilizados. Nenhum
 terminador adicional é exigido nas mensagens originais, e as respostas mantêm
-o formato do PTA. Não é necessário passar opções extras para a avaliação.
+o formato do PTA. Não é necessário passar opções extras para iniciar o servidor.
 
 Por padrão, o servidor escuta em `0.0.0.0:11550`, aceita conexões de rede e lê
 os usuários de `pta-server/users.txt`. Os arquivos disponíveis ficam em
@@ -85,8 +83,7 @@ Um arquivo vazio produz `SEQ ARQ 0 `.
 
 **Os identificadores do protocolo não são traduzidos ou alterados.** Eles
 permanecem `CUMP`, `LIST`, `PEGA`, `TERM`, `OK`, `NOK`, `ARQS` e `ARQ`, com a
-capitalização exata da especificação. O enunciado não exige inglês para a
-documentação, comentários ou mensagens locais; esses textos estão em português.
+capitalização exata da especificação.
 
 ## Delimitação das requisições TCP
 
@@ -173,7 +170,7 @@ limites de 64 KiB com LF/CRLF e CRLF separado, fragmentação lenta no modo por
 linhas, apresentação lenta no modo explícito e compatibilidade legada.
 O GitHub Actions executa a suíte no Ubuntu com Python **3.11 e 3.14**.
 
-### Cliente fornecido pelo professor
+### Cliente incluído
 
 Com o servidor iniciado, execute o cliente original em outra janela:
 
@@ -198,12 +195,3 @@ Há também um teste completo da execução pela linha de comando: o servidor é
 iniciado sem selecionar `--framing`, e o cliente original se conecta a ele sem
 terminadores, obtém 6/6 e baixa o arquivo textual corretamente. Esse teste usa
 uma porta temporária para não conflitar com um servidor já em execução.
-
-## Entrega da atividade
-
-O repositório de entrega é o fork público
-[luizcarlosaragao/pta](https://github.com/luizcarlosaragao/pta).
-O professor pode cloná-lo e iniciar o servidor com os comandos desta página.
-A submissão do link é feita no SIGAA. Os testes locais e o CI fornecem evidência
-de correção, mas não garantem aprovação em testes ocultos ou em interpretações
-diferentes das ambiguidades descritas na especificação.
